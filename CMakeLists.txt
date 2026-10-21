@@ -46,9 +46,12 @@ add_custom_target(Shaders ALL DEPENDS ${SPV_FILES})
 # ---------------------------------------------------------------------
 set(APP_SOURCES
     src/main.cpp
+    src/App.cpp
+    src/Instance.cpp
+    src/Device.cpp
 )
 
-add_executable(DeferredVulkan ${APP_SOURCES})
+add_executable(DeferredVulkan ${APP_SOURCES} "src/App.cpp" "src/Instance.cpp" "src/Device.cpp")
 add_dependencies(DeferredVulkan Shaders)
 
 target_include_directories(DeferredVulkan SYSTEM PRIVATE
