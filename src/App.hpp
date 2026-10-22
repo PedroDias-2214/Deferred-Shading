@@ -2,6 +2,8 @@
 
 #include "Instance.hpp"
 #include "Device.hpp"
+#include "Swapchain.hpp"
+#include "Shaders.hpp"
 
 struct GLFWwindow;
 
@@ -19,4 +21,6 @@ private:
     GLFWwindow* m_window = nullptr;
     Instance m_instance;
     Device m_device;
+    Swapchain m_swapchain;
+    Shaders m_shaders;
 };

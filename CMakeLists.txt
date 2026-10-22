@@ -49,9 +49,11 @@ set(APP_SOURCES
     src/App.cpp
     src/Instance.cpp
     src/Device.cpp
+    src/Swapchain.cpp
+    src/Shaders.cpp
 )
 
-add_executable(DeferredVulkan ${APP_SOURCES} "src/App.cpp" "src/Instance.cpp" "src/Device.cpp")
+add_executable(DeferredVulkan ${APP_SOURCES})
 add_dependencies(DeferredVulkan Shaders)
 
 target_include_directories(DeferredVulkan SYSTEM PRIVATE

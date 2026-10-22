@@ -29,6 +29,13 @@ void App::initWindow() {
 void App::initVulkan() {
     m_instance.create();
     m_device.create(m_instance.handle(), m_window);
+    m_swapchain.create(m_device, m_window);
+    m_shaders.load(m_device.logical(), {
+        "fullscreen.vert.spv",
+        "geometry.vert.spv",
+        "geometry.frag.spv",
+        "lighting.frag.spv",
+        });
 }
 
 void App::mainLoop() {
@@ -38,7 +45,9 @@ void App::mainLoop() {
 }
 
 void App::cleanup() {
-    // Ordem inversa da criação.
+    // Ordem inversa da criação: shaders, swapchain, dispositivo, instância.
+    m_shaders.destroy();
+    m_swapchain.destroy();
     m_device.destroy();
     m_instance.destroy();
 
