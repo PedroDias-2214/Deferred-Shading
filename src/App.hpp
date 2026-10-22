@@ -4,6 +4,7 @@
 #include "Device.hpp"
 #include "Swapchain.hpp"
 #include "Shaders.hpp"
+#include "RenderPass.hpp"
 
 struct GLFWwindow;
 
@@ -23,4 +24,5 @@ private:
     Device m_device;
     Swapchain m_swapchain;
     Shaders m_shaders;
+    RenderPass m_renderPass;
 };

@@ -36,6 +36,7 @@ void App::initVulkan() {
         "geometry.frag.spv",
         "lighting.frag.spv",
         });
+    m_renderPass.create(m_device.logical(), m_swapchain);
 }
 
 void App::mainLoop() {
@@ -45,7 +46,8 @@ void App::mainLoop() {
 }
 
 void App::cleanup() {
-    // Ordem inversa da criação: shaders, swapchain, dispositivo, instância.
+    // Ordem inversa da criação.
+    m_renderPass.destroy();
     m_shaders.destroy();
     m_swapchain.destroy();
     m_device.destroy();
