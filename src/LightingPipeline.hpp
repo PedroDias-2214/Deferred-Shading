@@ -12,7 +12,7 @@ struct LightingPushConstants {
     uint32_t debugView = 0;      // 0 = cor final; 1..5 = canais do G-Buffer
     uint32_t maxLights = 1024;
     uint32_t pad = 0;
-    float backgroundColor[4] = { 0.05f, 0.05f, 0.08f, 1.0f };
+    float backgroundColor[4] = { 0.0f, 0.02f, 0.25f, 1.0f }; // Background azul
 };
 static_assert(sizeof(LightingPushConstants) == 32, "LightingPushConstants deve ter 32 bytes");
 

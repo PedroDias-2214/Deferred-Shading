@@ -19,7 +19,7 @@ void App::initWindow() {
         throw std::runtime_error("Falha ao inicializar o GLFW");
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
     m_window = glfwCreateWindow(WIDTH, HEIGHT, "Deferred Shading", nullptr, nullptr);
     if (!m_window) {
         throw std::runtime_error("Falha ao criar a janela");
@@ -56,6 +56,7 @@ void App::initVulkan() {
     // Se a swapchain não for sRGB, o shader precisa aplicar a correção de gama.
     m_pipeline.create(m_device.logical(), m_renderPass.handle(), 1,
         m_shaders, m_descriptors, m_swapchain.format() != VK_FORMAT_B8G8R8A8_SRGB);
+    m_renderer.create(m_device, m_swapchain, m_renderPass, m_pipeline, m_descriptors);
 }
 
 // Dados iniciais da cena. As matrizes são identidade por enquanto:
@@ -85,6 +86,7 @@ void App::writeInitialScene() {
 
 void App::cleanup() {
     // Ordem inversa da criação: descriptors antes dos recursos que eles apontam.
+    m_renderer.destroy();
     m_pipeline.destroy();
     m_descriptors.destroy();
     m_renderPass.destroy();
@@ -103,6 +105,7 @@ void App::cleanup() {
 void App::mainLoop() {
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
+        m_renderer.drawFrame();
     }
 }
 

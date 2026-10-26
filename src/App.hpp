@@ -10,6 +10,7 @@
 #include "Descriptors.hpp"
 #include "SceneData.hpp"
 #include "LightingPipeline.hpp"
+#include "Renderer.hpp"
 
 struct GLFWwindow;
 
@@ -36,4 +37,5 @@ private:
     Buffer m_lightBuffer;
     Descriptors m_descriptors;
     LightingPipeline m_pipeline;
+    Renderer m_renderer;
 };
