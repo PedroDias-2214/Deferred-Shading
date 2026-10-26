@@ -55,6 +55,7 @@ set(APP_SOURCES
     src/RenderPass.cpp
     src/Buffer.cpp
     src/Descriptors.cpp
+    src/LightingPipeline.cpp
 )
 
 add_executable(DeferredVulkan ${APP_SOURCES})

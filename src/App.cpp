@@ -52,6 +52,10 @@ void App::initVulkan() {
     m_descriptors.writeCamera(m_cameraUbo);
     m_descriptors.writeLights(m_lightBuffer);
     m_descriptors.writeGBuffer(m_gbuffer);
+    // Pipeline do lighting pass: usa os shaders e os sets criados acima.
+    // Se a swapchain não for sRGB, o shader precisa aplicar a correção de gama.
+    m_pipeline.create(m_device.logical(), m_renderPass.handle(), 1,
+        m_shaders, m_descriptors, m_swapchain.format() != VK_FORMAT_B8G8R8A8_SRGB);
 }
 
 // Dados iniciais da cena. As matrizes são identidade por enquanto:
@@ -81,6 +85,7 @@ void App::writeInitialScene() {
 
 void App::cleanup() {
     // Ordem inversa da criação: descriptors antes dos recursos que eles apontam.
+    m_pipeline.destroy();
     m_descriptors.destroy();
     m_renderPass.destroy();
     m_gbuffer.destroy();

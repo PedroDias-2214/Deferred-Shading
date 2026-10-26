@@ -9,6 +9,7 @@
 #include "Buffer.hpp"
 #include "Descriptors.hpp"
 #include "SceneData.hpp"
+#include "LightingPipeline.hpp"
 
 struct GLFWwindow;
 
@@ -34,4 +35,5 @@ private:
     Buffer m_cameraUbo;
     Buffer m_lightBuffer;
     Descriptors m_descriptors;
+    LightingPipeline m_pipeline;
 };
