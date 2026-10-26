@@ -6,6 +6,9 @@
 #include "Shaders.hpp"
 #include "GBuffer.hpp"
 #include "RenderPass.hpp"
+#include "Buffer.hpp"
+#include "Descriptors.hpp"
+#include "SceneData.hpp"
 
 struct GLFWwindow;
 
@@ -19,6 +22,7 @@ private:
     void initVulkan();
     void mainLoop();
     void cleanup();
+    void writeInitialScene();
 
     GLFWwindow* m_window = nullptr;
     Instance m_instance;
@@ -27,4 +31,7 @@ private:
     Shaders m_shaders;
     GBuffer m_gbuffer;
     RenderPass m_renderPass;
+    Buffer m_cameraUbo;
+    Buffer m_lightBuffer;
+    Descriptors m_descriptors;
 };

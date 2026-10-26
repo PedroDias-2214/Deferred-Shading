@@ -36,20 +36,56 @@ void App::initVulkan() {
         "geometry.frag.spv",
         "lighting.frag.spv",
         });
+
+    // Buffers com os dados da cena, lidos pelos shaders através dos descriptor sets.
+    m_cameraUbo.create(m_device.logical(), m_device.physical(),
+        sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    m_lightBuffer.create(m_device.logical(), m_device.physical(),
+        sizeof(LightHeader) + MAX_LIGHTS * sizeof(GpuLight), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+    writeInitialScene();
+
     m_gbuffer.create(m_device, m_swapchain.extent());
     m_renderPass.create(m_device.logical(), m_swapchain, m_gbuffer);
+
+    // Descriptor sets ligam os buffers e o G-Buffer aos shaders.
+    m_descriptors.create(m_device.logical());
+    m_descriptors.writeCamera(m_cameraUbo);
+    m_descriptors.writeLights(m_lightBuffer);
+    m_descriptors.writeGBuffer(m_gbuffer);
 }
 
-void App::mainLoop() {
-    while (!glfwWindowShouldClose(m_window)) {
-        glfwPollEvents();
-    }
+// Dados iniciais da cena. As matrizes são identidade por enquanto:
+// a câmera real entra em uma etapa posterior.
+void App::writeInitialScene() {
+    CameraData cam{};
+    setIdentity(cam.view);
+    setIdentity(cam.proj);
+    setIdentity(cam.viewProj);
+    setIdentity(cam.invView);
+    setIdentity(cam.invProj);
+    cam.cameraPos[3] = 1.0f;
+    cam.screenSize[0] = static_cast<float>(WIDTH);
+    cam.screenSize[1] = static_cast<float>(HEIGHT);
+    cam.nearPlane = 0.1f;
+    cam.farPlane = 1000.0f;
+    m_cameraUbo.write(&cam, sizeof(cam));
+
+    // Sem luzes por enquanto. Só a luz ambiente, para o shader ter um valor válido.
+    LightHeader header{};
+    header.lightCount = 0;
+    header.ambientColor[0] = 0.1f;
+    header.ambientColor[1] = 0.1f;
+    header.ambientColor[2] = 0.1f;
+    m_lightBuffer.write(&header, sizeof(header));
 }
 
 void App::cleanup() {
-    // Ordem inversa da criação. O G-Buffer deve sair antes do dispositivo lógico.
+    // Ordem inversa da criação: descriptors antes dos recursos que eles apontam.
+    m_descriptors.destroy();
     m_renderPass.destroy();
     m_gbuffer.destroy();
+    m_lightBuffer.destroy();
+    m_cameraUbo.destroy();
     m_shaders.destroy();
     m_swapchain.destroy();
     m_device.destroy();
@@ -58,3 +94,10 @@ void App::cleanup() {
     glfwDestroyWindow(m_window);
     glfwTerminate();
 }
+
+void App::mainLoop() {
+    while (!glfwWindowShouldClose(m_window)) {
+        glfwPollEvents();
+    }
+}
+

@@ -53,6 +53,8 @@ set(APP_SOURCES
     src/Shaders.cpp
     src/GBuffer.cpp
     src/RenderPass.cpp
+    src/Buffer.cpp
+    src/Descriptors.cpp
 )
 
 add_executable(DeferredVulkan ${APP_SOURCES})
