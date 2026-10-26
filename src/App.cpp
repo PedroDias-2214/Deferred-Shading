@@ -36,7 +36,8 @@ void App::initVulkan() {
         "geometry.frag.spv",
         "lighting.frag.spv",
         });
-    m_renderPass.create(m_device.logical(), m_swapchain);
+    m_gbuffer.create(m_device, m_swapchain.extent());
+    m_renderPass.create(m_device.logical(), m_swapchain, m_gbuffer);
 }
 
 void App::mainLoop() {
@@ -46,8 +47,9 @@ void App::mainLoop() {
 }
 
 void App::cleanup() {
-    // Ordem inversa da criação.
+    // Ordem inversa da criação. O G-Buffer deve sair antes do dispositivo lógico.
     m_renderPass.destroy();
+    m_gbuffer.destroy();
     m_shaders.destroy();
     m_swapchain.destroy();
     m_device.destroy();

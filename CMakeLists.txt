@@ -51,6 +51,7 @@ set(APP_SOURCES
     src/Device.cpp
     src/Swapchain.cpp
     src/Shaders.cpp
+    src/GBuffer.cpp
     src/RenderPass.cpp
 )
 
