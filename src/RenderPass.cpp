@@ -163,14 +163,22 @@ std::vector<VkClearValue> RenderPass::clearValues() const {
 }
 
 void RenderPass::destroy() {
-    // Ordem inversa: framebuffers primeiro, depois o render pass.
-    for (VkFramebuffer fb : m_framebuffers) {
-        vkDestroyFramebuffer(m_device, fb, nullptr);
-    }
-    m_framebuffers.clear();
+    destroyFramebuffers();
 
     if (m_renderPass != VK_NULL_HANDLE) {
         vkDestroyRenderPass(m_device, m_renderPass, nullptr);
         m_renderPass = VK_NULL_HANDLE;
     }
+}
+
+void RenderPass::destroyFramebuffers() {
+    for (VkFramebuffer fb : m_framebuffers) {
+        vkDestroyFramebuffer(m_device, fb, nullptr);
+    }
+    m_framebuffers.clear();
+}
+
+void RenderPass::buildFramebuffers(const Swapchain& swapchain, const GBuffer& gbuffer) {
+    m_extent = swapchain.extent();
+    createFramebuffers(swapchain, gbuffer);
 }

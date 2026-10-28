@@ -30,6 +30,10 @@ public:
     // Valores de limpeza na ordem dos attachments. Usados no vkCmdBeginRenderPass.
     std::vector<VkClearValue> clearValues() const;
 
+    // Destrói os framebuffers antigos e cria novos após redimensionamento.
+    void destroyFramebuffers();
+    void buildFramebuffers(const Swapchain& swapchain, const GBuffer& gbuffer);
+
 private:
     void createRenderPass(VkFormat swapchainFormat);
     void createFramebuffers(const Swapchain& swapchain, const GBuffer& gbuffer);

@@ -70,11 +70,11 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
     std::printf("Renderer criado: %u frames em voo, %zu imagens\n", MAX_FRAMES_IN_FLIGHT, imageCount);
 }
 
-void Renderer::drawFrame(const CameraData& camera, const LightBlock& lights) {
+bool Renderer::drawFrame(const CameraData& camera, const LightBlock& lights) {
     // Espera a GPU terminar o frame que usava este slot.
     vkWaitForFences(m_device, 1, &m_inFlight[m_currentFrame], VK_TRUE, UINT64_MAX);
 
-    // Com o fence cumprido, a GPU não lê mais este slot: podemos escrever câmera e luzes nele.
+    // Com o fence cumprido, a GPU não lê mais este slot.
     (*m_cameraUbos)[m_currentFrame].write(&camera, sizeof(camera));
 
     Buffer& lightUbo = (*m_lightUbos)[m_currentFrame];
@@ -87,11 +87,13 @@ void Renderer::drawFrame(const CameraData& camera, const LightBlock& lights) {
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
         m_imageAvailable[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
     if (result == VK_ERROR_OUT_OF_DATE_KHR) {
-        throw std::runtime_error("Swapchain desatualizada (redimensionamento ainda não tratado)");
+        // Nada foi submetido, então o slot continua disponível para o próximo quadro.
+        return false;
     }
     if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
         throw std::runtime_error("Falha ao adquirir imagem da swapchain");
     }
+    bool stillValid = (result == VK_SUCCESS);
 
     vkResetFences(m_device, 1, &m_inFlight[m_currentFrame]);
 
@@ -123,12 +125,35 @@ void Renderer::drawFrame(const CameraData& camera, const LightBlock& lights) {
     present.pSwapchains = &m_swapchain;
     present.pImageIndices = &imageIndex;
 
-    result = vkQueuePresentKHR(m_presentQueue, &present);
-    if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+    VkResult presentResult = vkQueuePresentKHR(m_presentQueue, &present);
+    if (presentResult == VK_ERROR_OUT_OF_DATE_KHR || presentResult == VK_SUBOPTIMAL_KHR) {
+        stillValid = false;
+    }
+    else if (presentResult != VK_SUCCESS) {
         throw std::runtime_error("Falha ao apresentar a imagem");
     }
 
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    return stillValid;
+}
+
+void Renderer::onSwapchainRecreated(const Swapchain& swapchain) {
+    m_swapchain = swapchain.handle();
+
+    // Um semáforo de apresentação por imagem. A quantidade pode mudar com a nova swapchain.
+    for (VkSemaphore s : m_renderFinished) {
+        vkDestroySemaphore(m_device, s, nullptr);
+    }
+
+    VkSemaphoreCreateInfo semInfo{};
+    semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
+
+    m_renderFinished.assign(swapchain.imageViews().size(), VK_NULL_HANDLE);
+    for (VkSemaphore& s : m_renderFinished) {
+        if (vkCreateSemaphore(m_device, &semInfo, nullptr, &s) != VK_SUCCESS) {
+            throw std::runtime_error("Falha ao recriar semáforo de renderização");
+        }
+    }
 }
 
 void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t frame) {

@@ -31,6 +31,7 @@ private:
     void initVulkan();
     void mainLoop();
     void cleanup();
+    void recreateSwapchain();
 
     GLFWwindow* m_window = nullptr;
     Instance m_instance;

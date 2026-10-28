@@ -26,7 +26,11 @@ public:
     void destroy();
 
     // Escreve câmera e luzes no slot do frame atual e desenha o frame.
-    void drawFrame(const CameraData& camera, const LightBlock& lights);
+    // Retorna false quando a swapchain precisa ser recriada.
+    bool drawFrame(const CameraData& camera, const LightBlock& lights);
+
+    // Chamado depois que a swapchain foi recriada: atualiza o handle e os semáforos.
+    void onSwapchainRecreated(const Swapchain& swapchain);
     void setDebugView(uint32_t view) { m_debugView = view; }
 
 private:

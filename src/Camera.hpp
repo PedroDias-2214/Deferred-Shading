@@ -9,6 +9,9 @@ struct GLFWwindow;
 class Camera {
 public:
     void init(GLFWwindow* window, uint32_t width, uint32_t height);
+    void setCaptured(GLFWwindow* window, bool captured);
+    bool isCaptured() const { return m_captured; }
+    void setViewport(uint32_t width, uint32_t height) { m_width = width; m_height = height; }
     void update(GLFWwindow* window, float dt);
     void fillCameraData(CameraData& out) const;
 
@@ -24,4 +27,5 @@ private:
     double m_lastX = 0.0;
     double m_lastY = 0.0;
     bool m_firstMouse = true;
+    bool m_captured = true;
 };

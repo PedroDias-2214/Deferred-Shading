@@ -30,7 +30,7 @@ void App::initWindow() {
         throw std::runtime_error("Falha ao inicializar o GLFW");
     }
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
-    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
     m_window = glfwCreateWindow(WIDTH, HEIGHT, "Deferred Shading", nullptr, nullptr);
     if (!m_window) {
         throw std::runtime_error("Falha ao criar a janela");
@@ -87,18 +87,50 @@ void App::initVulkan() {
 
 void App::mainLoop() {
     double lastTime = glfwGetTime();
+    bool tabWasDown = false;
+
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
 
-        // Esc fecha a aplicação.
-        if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
-            glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+        // Tab alterna entre controlar a câmera e usar o mouse normalmente.
+        const bool tabDown = glfwGetKey(m_window, GLFW_KEY_TAB) == GLFW_PRESS;
+        if (tabDown && !tabWasDown) {
+            m_camera.setCaptured(m_window, !m_camera.isCaptured());
+        }
+        tabWasDown = tabDown;
+
+        // Clique esquerdo na janela prende o mouse de novo.
+        if (!m_camera.isCaptured() &&
+            glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+            m_camera.setCaptured(m_window, true);
         }
 
+        // Esc solta o mouse. Não fecha a aplicação: para fechar, use o X da janela.
+        if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS && m_camera.isCaptured()) {
+            m_camera.setCaptured(m_window, false);
+        }
+
+        // Teclas 0 a 5 trocam o modo de depuração.
         for (int key = GLFW_KEY_0; key <= GLFW_KEY_5; ++key) {
             if (glfwGetKey(m_window, key) == GLFW_PRESS) {
                 m_renderer.setDebugView(static_cast<uint32_t>(key - GLFW_KEY_0));
             }
+        }
+
+        // Janela minimizada tem tamanho zero, e isso não pode ter swapchain. Espera voltar.
+        int fbWidth = 0, fbHeight = 0;
+        glfwGetFramebufferSize(m_window, &fbWidth, &fbHeight);
+        if (fbWidth == 0 || fbHeight == 0) {
+            glfwWaitEvents();
+            lastTime = glfwGetTime();
+            continue;
+        }
+
+        // O tamanho mudou desde a última swapchain: recria o que depende dele.
+        const VkExtent2D current = m_swapchain.extent();
+        if (static_cast<uint32_t>(fbWidth) != current.width ||
+            static_cast<uint32_t>(fbHeight) != current.height) {
+            recreateSwapchain();
         }
 
         const double now = glfwGetTime();
@@ -110,11 +142,13 @@ void App::mainLoop() {
         CameraData cam{};
         m_camera.fillCameraData(cam);
 
-        // As luzes se movem com o tempo: são recalculadas a cada quadro.
         LightBlock lights;
         SceneLights::build(static_cast<float>(now), lights);
 
-        m_renderer.drawFrame(cam, lights);
+        // Se a swapchain ficou inválida durante o quadro, recria antes do próximo.
+        if (!m_renderer.drawFrame(cam, lights)) {
+            recreateSwapchain();
+        }
     }
 }
 
@@ -141,4 +175,29 @@ void App::cleanup() {
 
     glfwDestroyWindow(m_window);
     glfwTerminate();
+}
+
+// Recria os recursos que dependem do tamanho da janela. O render pass e os pipelines
+// não mudam: os formatos continuam iguais, e o viewport já é dinâmico.
+void App::recreateSwapchain() {
+    int w = 0, h = 0;
+    glfwGetFramebufferSize(m_window, &w, &h);
+    if (w == 0 || h == 0) return;  // minimizada: o loop tenta de novo depois
+
+    // Garante que a GPU terminou de usar tudo antes de destruir.
+    vkDeviceWaitIdle(m_device.logical());
+
+    // Ordem: framebuffers primeiro (eles referenciam as views), depois a swapchain e o G-Buffer.
+    m_renderPass.destroyFramebuffers();
+    m_swapchain.destroy();
+    m_swapchain.create(m_device, m_window);
+
+    const VkExtent2D ext = m_swapchain.extent();
+    m_gbuffer.destroy();
+    m_gbuffer.create(m_device, ext);
+
+    m_renderPass.buildFramebuffers(m_swapchain, m_gbuffer);
+    m_descriptors.writeGBuffer(m_gbuffer);
+    m_renderer.onSwapchainRecreated(m_swapchain);
+    m_camera.setViewport(ext.width, ext.height);
 }

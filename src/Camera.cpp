@@ -41,11 +41,17 @@ namespace {
 void Camera::init(GLFWwindow* window, uint32_t width, uint32_t height) {
     m_width = width;
     m_height = height;
-    // Cursor preso na janela: o mouse controla só o olhar.
-    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+    setCaptured(window, true);
+}
+
+void Camera::setCaptured(GLFWwindow* window, bool captured) {
+    m_captured = captured;
+    glfwSetInputMode(window, GLFW_CURSOR, captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+    m_firstMouse = true;  // evita um salto do olhar ao prender o mouse de novo
 }
 
 void Camera::update(GLFWwindow* window, float dt) {
+    if (!m_captured) return;  // mouse solto: a câmera não se move
     // Olhar: a diferença de posição do mouse entre quadros vira ângulo.
     double x = 0.0, y = 0.0;
     glfwGetCursorPos(window, &x, &y);
