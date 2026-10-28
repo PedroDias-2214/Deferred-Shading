@@ -14,6 +14,9 @@
 #include "GeometryPipeline.hpp"
 #include "LightingPipeline.hpp"
 #include "Renderer.hpp"
+#include "Camera.hpp"
+
+#include <vector>
 
 struct GLFWwindow;
 
@@ -34,7 +37,7 @@ private:
     Device m_device;
     Swapchain m_swapchain;
     Shaders m_shaders;
-    Buffer m_cameraUbo;
+    std::vector<Buffer> m_cameraUbos;  // um por frame em voo
     Buffer m_lightBuffer;
     GBuffer m_gbuffer;
     RenderPass m_renderPass;
@@ -44,4 +47,5 @@ private:
     GeometryPipeline m_geometryPipeline;
     LightingPipeline m_pipeline;
     Renderer m_renderer;
+    Camera m_camera;
 };

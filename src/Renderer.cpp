@@ -7,7 +7,7 @@
 
 void Renderer::create(const Device& device, const Swapchain& swapchain, const RenderPass& renderPass,
     const GeometryPipeline& geometry, const LightingPipeline& lighting,
-    const Mesh& mesh, const Descriptors& descriptors)
+    const Mesh& mesh, const Descriptors& descriptors, std::vector<Buffer>& cameraUbos)
 {
     m_device = device.logical();
     m_graphicsQueue = device.graphicsQueue();
@@ -18,6 +18,7 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
     m_lighting = &lighting;
     m_mesh = &mesh;
     m_descriptors = &descriptors;
+    m_cameraUbos = &cameraUbos;
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -67,11 +68,13 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
     std::printf("Renderer criado: %u frames em voo, %zu imagens\n", MAX_FRAMES_IN_FLIGHT, imageCount);
 }
 
-void Renderer::drawFrame() {
+void Renderer::drawFrame(const CameraData& camera) {
     // Espera a GPU terminar o frame que usava este slot antes de reaproveitá-lo.
     vkWaitForFences(m_device, 1, &m_inFlight[m_currentFrame], VK_TRUE, UINT64_MAX);
 
-    // Pede a próxima imagem livre da swapchain. O semáforo avisa quando ela estiver pronta.
+    // Agora que a GPU terminou este slot, o UBO de câmera dele pode ser atualizado.
+    (*m_cameraUbos)[m_currentFrame].write(&camera, sizeof(camera));
+
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
         m_imageAvailable[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
@@ -82,14 +85,12 @@ void Renderer::drawFrame() {
         throw std::runtime_error("Falha ao adquirir imagem da swapchain");
     }
 
-    // Só agora resetamos o fence, porque vamos submeter um novo trabalho com ele.
     vkResetFences(m_device, 1, &m_inFlight[m_currentFrame]);
 
     VkCommandBuffer cmd = m_commandBuffers[m_currentFrame];
     vkResetCommandBuffer(cmd, 0);
-    recordCommands(cmd, imageIndex);
+    recordCommands(cmd, imageIndex, m_currentFrame);
 
-    // Submissão: espera a imagem estar pronta antes de escrever nela.
     VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
 
     VkSubmitInfo submit{};
@@ -106,7 +107,6 @@ void Renderer::drawFrame() {
         throw std::runtime_error("Falha ao submeter comandos à fila gráfica");
     }
 
-    // Apresentação: só mostra a imagem depois que a renderização terminar.
     VkPresentInfoKHR present{};
     present.sType = VK_STRUCTURE_TYPE_PRESENT_INFO_KHR;
     present.waitSemaphoreCount = 1;
@@ -123,7 +123,7 @@ void Renderer::drawFrame() {
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
+void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t frame) {
     VkCommandBufferBeginInfo begin{};
     begin.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
@@ -145,7 +145,6 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // Viewport e scissor são dinâmicos e valem para os dois subpasses.
     VkExtent2D ext = m_renderPass->extent();
 
     VkViewport viewport{};
@@ -159,18 +158,24 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
     scissor.extent = ext;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // Os quatro sets, na ordem dos números do shader. Os dois pipelines usam
-    // os mesmos layouts, então os mesmos sets servem para os dois.
-    VkDescriptorSet sets[SET_COUNT];
-    for (uint32_t i = 0; i < SET_COUNT; ++i) {
-        sets[i] = m_descriptors->set(static_cast<DescriptorSet>(i));
-    }
+    // Set 0 (câmera) é específico do frame. Os sets 1 a 3 são compartilhados.
+    // Os dois pipelines usam os mesmos layouts, então a mesma ligação serve para ambos.
+    const VkDescriptorSet camera = m_descriptors->cameraSet(frame);
+    const VkDescriptorSet shared[SET_COUNT - 1] = {
+        m_descriptors->set(SET_MATERIAL),
+        m_descriptors->set(SET_LIGHTS),
+        m_descriptors->set(SET_GBUFFER),
+    };
+    auto bindSets = [&](VkPipelineLayout layout) {
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+            0, 1, &camera, 0, nullptr);
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
+            1, SET_COUNT - 1, shared, 0, nullptr);
+        };
 
     // ---- Subpass 0: geometria ----
-    // Desenha o triângulo e preenche o G-Buffer (posição, normal, albedo e profundidade).
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_geometry->handle());
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_geometry->layout(),
-        0, SET_COUNT, sets, 0, nullptr);
+    bindSets(m_geometry->layout());
     m_mesh->bind(cmd);
 
     ObjectPushConstants obj{};
@@ -182,18 +187,15 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
     vkCmdDraw(cmd, m_mesh->vertexCount(), 1, 0, 0);
 
     // ---- Subpass 1: iluminação ----
-    // Lê o G-Buffer e escreve a cor final na swapchain.
     vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
 
     vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lighting->handle());
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lighting->layout(),
-        0, SET_COUNT, sets, 0, nullptr);
+    bindSets(m_lighting->layout());
 
     LightingPushConstants pc{};
     vkCmdPushConstants(cmd, m_lighting->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
         0, sizeof(pc), &pc);
 
-    // Triângulo de tela cheia: 3 vértices gerados pelo shader, sem vertex buffer.
     vkCmdDraw(cmd, 3, 1, 0, 0);
 
     vkCmdEndRenderPass(cmd);
@@ -206,14 +208,12 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
 void Renderer::destroy() {
     if (m_device == VK_NULL_HANDLE) return;
 
-    // Espera a GPU terminar tudo antes de destruir qualquer recurso usado por ela.
     vkDeviceWaitIdle(m_device);
 
     for (VkFence f : m_inFlight) vkDestroyFence(m_device, f, nullptr);
     for (VkSemaphore s : m_imageAvailable) vkDestroySemaphore(m_device, s, nullptr);
     for (VkSemaphore s : m_renderFinished) vkDestroySemaphore(m_device, s, nullptr);
 
-    // Destruir o pool libera os command buffers alocados nele.
     if (m_commandPool != VK_NULL_HANDLE) {
         vkDestroyCommandPool(m_device, m_commandPool, nullptr);
         m_commandPool = VK_NULL_HANDLE;

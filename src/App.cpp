@@ -8,13 +8,13 @@
 #include <stdexcept>
 #include <vector>
 
-// Triângulo no espaço de recorte, à frente da câmera (z = 0.5).
-// Está em sentido anti-horário, então a face fica voltada para a câmera.
+// Triângulo no plano z = 0, voltado para a câmera, que começa em z = 3 olhando para -Z.
+// A ordem dos vértices é anti-horária vista de +Z, que é a face da frente.
 static std::vector<Vertex> makeTriangle() {
     return {
-        {{ 0.0f, -0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{ 0.5f,  0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
-        {{-0.5f,  0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{ 0.0f,  1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.5f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{-1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
+        {{ 1.0f, -1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f}},
     };
 }
 
@@ -48,8 +48,13 @@ void App::initVulkan() {
         "lighting.frag.spv",
         });
 
-    m_cameraUbo.create(m_device.logical(), m_device.physical(),
-        sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    // Um UBO de câmera por frame em voo, para não alterar a memória que a GPU ainda usa.
+    m_cameraUbos.resize(MAX_FRAMES_IN_FLIGHT);
+    for (Buffer& ubo : m_cameraUbos) {
+        ubo.create(m_device.logical(), m_device.physical(),
+            sizeof(CameraData), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
+    }
+
     m_lightBuffer.create(m_device.logical(), m_device.physical(),
         sizeof(LightHeader) + MAX_LIGHTS * sizeof(GpuLight), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
     writeInitialScene();
@@ -57,8 +62,10 @@ void App::initVulkan() {
     m_gbuffer.create(m_device, m_swapchain.extent());
     m_renderPass.create(m_device.logical(), m_swapchain, m_gbuffer);
 
-    m_descriptors.create(m_device.logical());
-    m_descriptors.writeCamera(m_cameraUbo);
+    m_descriptors.create(m_device.logical(), MAX_FRAMES_IN_FLIGHT);
+    for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+        m_descriptors.writeCamera(i, m_cameraUbos[i]);
+    }
     m_descriptors.writeLights(m_lightBuffer);
     m_descriptors.writeGBuffer(m_gbuffer);
 
@@ -72,25 +79,14 @@ void App::initVulkan() {
     m_pipeline.create(m_device.logical(), m_renderPass.handle(), 1,
         m_shaders, m_descriptors, m_swapchain.format() != VK_FORMAT_B8G8R8A8_SRGB);
 
+    m_camera.init(m_window, WIDTH, HEIGHT);
+
     m_renderer.create(m_device, m_swapchain, m_renderPass,
-        m_geometryPipeline, m_pipeline, m_mesh, m_descriptors);
+        m_geometryPipeline, m_pipeline, m_mesh, m_descriptors, m_cameraUbos);
 }
 
-// Dados iniciais da cena: câmera em identidade e uma luz direcional.
+// Luzes da cena. A câmera é atualizada a cada quadro, em mainLoop.
 void App::writeInitialScene() {
-    CameraData cam{};
-    setIdentity(cam.view);
-    setIdentity(cam.proj);
-    setIdentity(cam.viewProj);
-    setIdentity(cam.invView);
-    setIdentity(cam.invProj);
-    cam.cameraPos[3] = 1.0f;
-    cam.screenSize[0] = static_cast<float>(WIDTH);
-    cam.screenSize[1] = static_cast<float>(HEIGHT);
-    cam.nearPlane = 0.1f;
-    cam.farPlane = 1000.0f;
-    m_cameraUbo.write(&cam, sizeof(cam));
-
     LightHeader header{};
     header.lightCount = 1;
     header.ambientColor[0] = 0.1f;
@@ -111,14 +107,29 @@ void App::writeInitialScene() {
 }
 
 void App::mainLoop() {
+    double lastTime = glfwGetTime();
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
-        m_renderer.drawFrame();
+
+        // Esc fecha a aplicação.
+        if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
+            glfwSetWindowShouldClose(m_window, GLFW_TRUE);
+        }
+
+        const double now = glfwGetTime();
+        const float dt = static_cast<float>(now - lastTime);
+        lastTime = now;
+
+        m_camera.update(m_window, dt);
+
+        CameraData cam{};
+        m_camera.fillCameraData(cam);
+        m_renderer.drawFrame(cam);
     }
 }
 
 void App::cleanup() {
-    // Ordem inversa da criação: pipelines e renderer antes dos recursos que usam.
+    // Ordem inversa da criação: renderer e pipelines antes dos recursos que usam.
     m_renderer.destroy();
     m_pipeline.destroy();
     m_geometryPipeline.destroy();
@@ -128,7 +139,9 @@ void App::cleanup() {
     m_renderPass.destroy();
     m_gbuffer.destroy();
     m_lightBuffer.destroy();
-    m_cameraUbo.destroy();
+    for (Buffer& ubo : m_cameraUbos) {
+        ubo.destroy();
+    }
     m_shaders.destroy();
     m_swapchain.destroy();
     m_device.destroy();

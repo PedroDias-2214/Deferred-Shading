@@ -60,6 +60,7 @@ set(APP_SOURCES
     src/DefaultMaterial.cpp
     src/Mesh.cpp
     src/GeometryPipeline.cpp
+    src/Camera.cpp
 )
 
 add_executable(DeferredVulkan ${APP_SOURCES})
