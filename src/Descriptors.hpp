@@ -25,6 +25,8 @@ public:
     void writeCamera(const Buffer& ubo);
     void writeLights(const Buffer& ssbo);
     void writeGBuffer(const GBuffer& gbuffer);
+    void writeMaterial(VkImageView albedo, VkImageView normal, VkImageView specular,
+        VkSampler sampler, const Buffer& ubo);
 
     const std::array<VkDescriptorSetLayout, SET_COUNT>& layouts() const { return m_layouts; }
     VkDescriptorSet set(DescriptorSet index) const { return m_sets[index]; }

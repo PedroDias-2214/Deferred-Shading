@@ -9,6 +9,9 @@
 #include "Buffer.hpp"
 #include "Descriptors.hpp"
 #include "SceneData.hpp"
+#include "DefaultMaterial.hpp"
+#include "Mesh.hpp"
+#include "GeometryPipeline.hpp"
 #include "LightingPipeline.hpp"
 #include "Renderer.hpp"
 
@@ -22,20 +25,23 @@ public:
 private:
     void initWindow();
     void initVulkan();
+    void writeInitialScene();
     void mainLoop();
     void cleanup();
-    void writeInitialScene();
 
     GLFWwindow* m_window = nullptr;
     Instance m_instance;
     Device m_device;
     Swapchain m_swapchain;
     Shaders m_shaders;
-    GBuffer m_gbuffer;
-    RenderPass m_renderPass;
     Buffer m_cameraUbo;
     Buffer m_lightBuffer;
+    GBuffer m_gbuffer;
+    RenderPass m_renderPass;
     Descriptors m_descriptors;
+    DefaultMaterial m_material;
+    Mesh m_mesh;
+    GeometryPipeline m_geometryPipeline;
     LightingPipeline m_pipeline;
     Renderer m_renderer;
 };

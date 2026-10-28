@@ -1,20 +1,24 @@
 #include "Renderer.hpp"
+#include "SceneData.hpp"
 
 #include <cstdio>
 #include <stdexcept>
+#include <vector>
 
 void Renderer::create(const Device& device, const Swapchain& swapchain, const RenderPass& renderPass,
-    const LightingPipeline& pipeline, const Descriptors& descriptors)
+    const GeometryPipeline& geometry, const LightingPipeline& lighting,
+    const Mesh& mesh, const Descriptors& descriptors)
 {
     m_device = device.logical();
     m_graphicsQueue = device.graphicsQueue();
     m_presentQueue = device.presentQueue();
     m_swapchain = swapchain.handle();
     m_renderPass = &renderPass;
-    m_pipeline = &pipeline;
+    m_geometry = &geometry;
+    m_lighting = &lighting;
+    m_mesh = &mesh;
     m_descriptors = &descriptors;
 
-    // ---- Command pool: permite resetar cada command buffer separadamente ----
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
     poolInfo.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
@@ -24,7 +28,6 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
         throw std::runtime_error("Falha ao criar o command pool");
     }
 
-    // ---- Command buffers: um por frame em voo ----
     m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT);
 
     VkCommandBufferAllocateInfo alloc{};
@@ -37,8 +40,6 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
         throw std::runtime_error("Falha ao alocar command buffers");
     }
 
-    // ---- Sincronização ----
-    // Fences começam sinalizadas: a primeira espera de cada frame passa sem bloquear.
     VkSemaphoreCreateInfo semInfo{};
     semInfo.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
@@ -55,8 +56,6 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
         }
     }
 
-    // O semáforo de "renderização terminada" é usado pela apresentação, que é
-    // por imagem da swapchain, então há um para cada imagem.
     const size_t imageCount = swapchain.imageViews().size();
     m_renderFinished.resize(imageCount);
     for (size_t i = 0; i < imageCount; ++i) {
@@ -133,7 +132,6 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
         throw std::runtime_error("Falha ao iniciar o command buffer");
     }
 
-    // ---- Início do render pass: limpa os attachments ----
     std::vector<VkClearValue> clears = m_renderPass->clearValues();
 
     VkRenderPassBeginInfo rpInfo{};
@@ -147,22 +145,7 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
 
     vkCmdBeginRenderPass(cmd, &rpInfo, VK_SUBPASS_CONTENTS_INLINE);
 
-    // ---- Subpass 0: geometria ----
-    // Ainda não há malhas, então nada é desenhado aqui. O G-Buffer fica limpo.
-    vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
-
-    // ---- Subpass 1: iluminação ----
-    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->handle());
-
-    // Os quatro sets, na ordem dos números do shader.
-    VkDescriptorSet sets[SET_COUNT];
-    for (uint32_t i = 0; i < SET_COUNT; ++i) {
-        sets[i] = m_descriptors->set(static_cast<DescriptorSet>(i));
-    }
-    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipeline->layout(),
-        0, SET_COUNT, sets, 0, nullptr);
-
-    // Viewport e scissor são dinâmicos, então precisam ser definidos aqui.
+    // Viewport e scissor são dinâmicos e valem para os dois subpasses.
     VkExtent2D ext = m_renderPass->extent();
 
     VkViewport viewport{};
@@ -176,9 +159,38 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex) {
     scissor.extent = ext;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // Parâmetros padrão do lighting pass.
+    // Os quatro sets, na ordem dos números do shader. Os dois pipelines usam
+    // os mesmos layouts, então os mesmos sets servem para os dois.
+    VkDescriptorSet sets[SET_COUNT];
+    for (uint32_t i = 0; i < SET_COUNT; ++i) {
+        sets[i] = m_descriptors->set(static_cast<DescriptorSet>(i));
+    }
+
+    // ---- Subpass 0: geometria ----
+    // Desenha o triângulo e preenche o G-Buffer (posição, normal, albedo e profundidade).
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_geometry->handle());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_geometry->layout(),
+        0, SET_COUNT, sets, 0, nullptr);
+    m_mesh->bind(cmd);
+
+    ObjectPushConstants obj{};
+    setIdentity(obj.model);
+    setIdentity(obj.normalMatrix);
+    vkCmdPushConstants(cmd, m_geometry->layout(), VK_SHADER_STAGE_VERTEX_BIT,
+        0, sizeof(obj), &obj);
+
+    vkCmdDraw(cmd, m_mesh->vertexCount(), 1, 0, 0);
+
+    // ---- Subpass 1: iluminação ----
+    // Lê o G-Buffer e escreve a cor final na swapchain.
+    vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
+
+    vkCmdBindPipeline(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lighting->handle());
+    vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_lighting->layout(),
+        0, SET_COUNT, sets, 0, nullptr);
+
     LightingPushConstants pc{};
-    vkCmdPushConstants(cmd, m_pipeline->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
+    vkCmdPushConstants(cmd, m_lighting->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
         0, sizeof(pc), &pc);
 
     // Triângulo de tela cheia: 3 vértices gerados pelo shader, sem vertex buffer.

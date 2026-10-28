@@ -150,6 +150,34 @@ void Descriptors::writeGBuffer(const GBuffer& g) {
     vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
 }
 
+void Descriptors::writeMaterial(VkImageView albedo, VkImageView normal, VkImageView specular,
+    VkSampler sampler, const Buffer& ubo) {
+    VkDescriptorImageInfo images[3] = {
+        {sampler, albedo,   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {sampler, normal,   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+        {sampler, specular, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL},
+    };
+    VkDescriptorBufferInfo bufInfo{ ubo.handle(), 0, ubo.size() };
+
+    VkWriteDescriptorSet writes[4]{};
+    for (uint32_t i = 0; i < 3; ++i) {
+        writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        writes[i].dstSet = m_sets[SET_MATERIAL];
+        writes[i].dstBinding = i;
+        writes[i].descriptorCount = 1;
+        writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        writes[i].pImageInfo = &images[i];
+    }
+    writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    writes[3].dstSet = m_sets[SET_MATERIAL];
+    writes[3].dstBinding = 3;
+    writes[3].descriptorCount = 1;
+    writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    writes[3].pBufferInfo = &bufInfo;
+
+    vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
+}
+
 void Descriptors::destroy() {
     // Liberar o pool libera todos os sets alocados nele.
     if (m_pool != VK_NULL_HANDLE) {
