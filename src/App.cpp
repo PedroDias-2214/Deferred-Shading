@@ -95,6 +95,12 @@ void App::mainLoop() {
             glfwSetWindowShouldClose(m_window, GLFW_TRUE);
         }
 
+        for (int key = GLFW_KEY_0; key <= GLFW_KEY_5; ++key) {
+            if (glfwGetKey(m_window, key) == GLFW_PRESS) {
+                m_renderer.setDebugView(static_cast<uint32_t>(key - GLFW_KEY_0));
+            }
+        }
+
         const double now = glfwGetTime();
         const float dt = static_cast<float>(now - lastTime);
         lastTime = now;

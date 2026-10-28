@@ -27,6 +27,7 @@ public:
 
     // Escreve câmera e luzes no slot do frame atual e desenha o frame.
     void drawFrame(const CameraData& camera, const LightBlock& lights);
+    void setDebugView(uint32_t view) { m_debugView = view; }
 
 private:
     void recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t frame);
@@ -50,6 +51,7 @@ private:
     std::vector<VkSemaphore> m_imageAvailable;
     std::vector<VkSemaphore> m_renderFinished;
     std::vector<VkFence> m_inFlight;
+    uint32_t m_debugView = 0;
 
     uint32_t m_currentFrame = 0;
 };

@@ -199,6 +199,7 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t
     bindSets(m_lighting->layout());
 
     LightingPushConstants pc{};
+    pc.debugView = m_debugView;
     vkCmdPushConstants(cmd, m_lighting->layout(), VK_SHADER_STAGE_FRAGMENT_BIT,
         0, sizeof(pc), &pc);
 
