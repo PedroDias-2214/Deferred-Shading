@@ -55,67 +55,69 @@ void Descriptors::create(VkDevice device, uint32_t framesInFlight) {
         binding(3, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, frag),
         });
 
-    // Pool: um UBO por frame para a câmera, mais o UBO do material.
-    std::array<VkDescriptorPoolSize, 4> sizes = { {
+    // Pool: UBO de câmera por frame + UBO do material; SSBO por frame; 3 texturas; 4 input attachments.
+    VkDescriptorPoolSize sizes[4] = {
         {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, framesInFlight + 1},
         {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 3},
-        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1},
+        {VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, framesInFlight},
         {VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT, 4},
-    } };
+    };
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-    poolInfo.poolSizeCount = static_cast<uint32_t>(sizes.size());
-    poolInfo.pPoolSizes = sizes.data();
-    poolInfo.maxSets = framesInFlight + 3;  // sets de câmera + material, luzes e G-Buffer
+    poolInfo.poolSizeCount = 4;
+    poolInfo.pPoolSizes = sizes;
+    poolInfo.maxSets = 2 * framesInFlight + 2;  // câmera e luzes por frame, mais material e G-Buffer
 
     if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_pool) != VK_SUCCESS) {
         throw std::runtime_error("Falha ao criar o descriptor pool");
     }
 
-    // Sets de câmera: um por frame em voo, todos com o mesmo layout.
-    std::vector<VkDescriptorSetLayout> cameraLayouts(framesInFlight, m_layouts[SET_CAMERA]);
     m_cameraSets.assign(framesInFlight, VK_NULL_HANDLE);
+    m_lightSets.assign(framesInFlight, VK_NULL_HANDLE);
+    allocate(m_layouts[SET_CAMERA], framesInFlight, m_cameraSets.data());
+    allocate(m_layouts[SET_LIGHTS], framesInFlight, m_lightSets.data());
+    allocate(m_layouts[SET_MATERIAL], 1, &m_materialSet);
+    allocate(m_layouts[SET_GBUFFER], 1, &m_gbufferSet);
 
-    VkDescriptorSetAllocateInfo camAlloc{};
-    camAlloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-    camAlloc.descriptorPool = m_pool;
-    camAlloc.descriptorSetCount = framesInFlight;
-    camAlloc.pSetLayouts = cameraLayouts.data();
+    std::printf("Descriptor sets criados: %u de câmera, %u de luzes, material e G-Buffer\n",
+        framesInFlight, framesInFlight);
+}
 
-    if (vkAllocateDescriptorSets(m_device, &camAlloc, m_cameraSets.data()) != VK_SUCCESS) {
-        throw std::runtime_error("Falha ao alocar descriptor sets de câmera");
-    }
+void Descriptors::allocate(VkDescriptorSetLayout layout, uint32_t count, VkDescriptorSet* out) {
+    std::vector<VkDescriptorSetLayout> layouts(count, layout);
 
-    // Sets compartilhados: material, luzes e G-Buffer (índices 1 a 3, em sequência).
     VkDescriptorSetAllocateInfo alloc{};
     alloc.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
     alloc.descriptorPool = m_pool;
-    alloc.descriptorSetCount = SET_COUNT - 1;
-    alloc.pSetLayouts = &m_layouts[SET_MATERIAL];
+    alloc.descriptorSetCount = count;
+    alloc.pSetLayouts = layouts.data();
 
-    if (vkAllocateDescriptorSets(m_device, &alloc, &m_sets[SET_MATERIAL]) != VK_SUCCESS) {
+    if (vkAllocateDescriptorSets(m_device, &alloc, out) != VK_SUCCESS) {
         throw std::runtime_error("Falha ao alocar descriptor sets");
     }
-
-    std::printf("Descriptor sets criados: %u de câmera, 3 compartilhados\n", framesInFlight);
 }
 
-void Descriptors::writeCamera(uint32_t frame, const Buffer& ubo) {
-    VkDescriptorBufferInfo bufInfo{};
-    bufInfo.buffer = ubo.handle();
-    bufInfo.offset = 0;
-    bufInfo.range = ubo.size();
+void Descriptors::writeBuffer(VkDescriptorSet set, uint32_t binding, VkDescriptorType type, const Buffer& buf) {
+    VkDescriptorBufferInfo info{ buf.handle(), 0, buf.size() };
 
     VkWriteDescriptorSet write{};
     write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_cameraSets[frame];
-    write.dstBinding = 0;
+    write.dstSet = set;
+    write.dstBinding = binding;
     write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-    write.pBufferInfo = &bufInfo;
+    write.descriptorType = type;
+    write.pBufferInfo = &info;
 
     vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
+}
+
+void Descriptors::writeCamera(uint32_t frame, const Buffer& ubo) {
+    writeBuffer(m_cameraSets[frame], 0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, ubo);
+}
+
+void Descriptors::writeLights(uint32_t frame, const Buffer& ssbo) {
+    writeBuffer(m_lightSets[frame], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, ssbo);
 }
 
 void Descriptors::writeMaterial(VkImageView albedo, VkImageView normal, VkImageView specular,
@@ -130,37 +132,20 @@ void Descriptors::writeMaterial(VkImageView albedo, VkImageView normal, VkImageV
     VkWriteDescriptorSet writes[4]{};
     for (uint32_t i = 0; i < 3; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = m_sets[SET_MATERIAL];
+        writes[i].dstSet = m_materialSet;
         writes[i].dstBinding = i;
         writes[i].descriptorCount = 1;
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         writes[i].pImageInfo = &images[i];
     }
     writes[3].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    writes[3].dstSet = m_sets[SET_MATERIAL];
+    writes[3].dstSet = m_materialSet;
     writes[3].dstBinding = 3;
     writes[3].descriptorCount = 1;
     writes[3].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     writes[3].pBufferInfo = &bufInfo;
 
     vkUpdateDescriptorSets(m_device, 4, writes, 0, nullptr);
-}
-
-void Descriptors::writeLights(const Buffer& ssbo) {
-    VkDescriptorBufferInfo bufInfo{};
-    bufInfo.buffer = ssbo.handle();
-    bufInfo.offset = 0;
-    bufInfo.range = ssbo.size();
-
-    VkWriteDescriptorSet write{};
-    write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-    write.dstSet = m_sets[SET_LIGHTS];
-    write.dstBinding = 0;
-    write.descriptorCount = 1;
-    write.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-    write.pBufferInfo = &bufInfo;
-
-    vkUpdateDescriptorSets(m_device, 1, &write, 0, nullptr);
 }
 
 void Descriptors::writeGBuffer(const GBuffer& g) {
@@ -174,7 +159,7 @@ void Descriptors::writeGBuffer(const GBuffer& g) {
     VkWriteDescriptorSet writes[4]{};
     for (uint32_t i = 0; i < 4; ++i) {
         writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-        writes[i].dstSet = m_sets[SET_GBUFFER];
+        writes[i].dstSet = m_gbufferSet;
         writes[i].dstBinding = i;
         writes[i].descriptorCount = 1;
         writes[i].descriptorType = VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT;
@@ -197,4 +182,7 @@ void Descriptors::destroy() {
         }
     }
     m_cameraSets.clear();
+    m_lightSets.clear();
+    m_materialSet = VK_NULL_HANDLE;
+    m_gbufferSet = VK_NULL_HANDLE;
 }

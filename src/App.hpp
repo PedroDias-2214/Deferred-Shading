@@ -9,6 +9,7 @@
 #include "Buffer.hpp"
 #include "Descriptors.hpp"
 #include "SceneData.hpp"
+#include "Lights.hpp"
 #include "DefaultMaterial.hpp"
 #include "Mesh.hpp"
 #include "GeometryPipeline.hpp"
@@ -28,7 +29,6 @@ public:
 private:
     void initWindow();
     void initVulkan();
-    void writeInitialScene();
     void mainLoop();
     void cleanup();
 
@@ -38,7 +38,7 @@ private:
     Swapchain m_swapchain;
     Shaders m_shaders;
     std::vector<Buffer> m_cameraUbos;  // um por frame em voo
-    Buffer m_lightBuffer;
+    std::vector<Buffer> m_lightUbos;   // um por frame em voo
     GBuffer m_gbuffer;
     RenderPass m_renderPass;
     Descriptors m_descriptors;

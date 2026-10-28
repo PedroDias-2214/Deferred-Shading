@@ -7,7 +7,8 @@
 
 void Renderer::create(const Device& device, const Swapchain& swapchain, const RenderPass& renderPass,
     const GeometryPipeline& geometry, const LightingPipeline& lighting,
-    const Mesh& mesh, const Descriptors& descriptors, std::vector<Buffer>& cameraUbos)
+    const Mesh& mesh, const Descriptors& descriptors,
+    std::vector<Buffer>& cameraUbos, std::vector<Buffer>& lightUbos)
 {
     m_device = device.logical();
     m_graphicsQueue = device.graphicsQueue();
@@ -19,6 +20,7 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
     m_mesh = &mesh;
     m_descriptors = &descriptors;
     m_cameraUbos = &cameraUbos;
+    m_lightUbos = &lightUbos;
 
     VkCommandPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
@@ -68,12 +70,18 @@ void Renderer::create(const Device& device, const Swapchain& swapchain, const Re
     std::printf("Renderer criado: %u frames em voo, %zu imagens\n", MAX_FRAMES_IN_FLIGHT, imageCount);
 }
 
-void Renderer::drawFrame(const CameraData& camera) {
-    // Espera a GPU terminar o frame que usava este slot antes de reaproveitá-lo.
+void Renderer::drawFrame(const CameraData& camera, const LightBlock& lights) {
+    // Espera a GPU terminar o frame que usava este slot.
     vkWaitForFences(m_device, 1, &m_inFlight[m_currentFrame], VK_TRUE, UINT64_MAX);
 
-    // Agora que a GPU terminou este slot, o UBO de câmera dele pode ser atualizado.
+    // Com o fence cumprido, a GPU não lê mais este slot: podemos escrever câmera e luzes nele.
     (*m_cameraUbos)[m_currentFrame].write(&camera, sizeof(camera));
+
+    Buffer& lightUbo = (*m_lightUbos)[m_currentFrame];
+    lightUbo.write(&lights.header, sizeof(LightHeader));
+    if (!lights.lights.empty()) {
+        lightUbo.write(lights.lights.data(), lights.lights.size() * sizeof(GpuLight), sizeof(LightHeader));
+    }
 
     uint32_t imageIndex = 0;
     VkResult result = vkAcquireNextImageKHR(m_device, m_swapchain, UINT64_MAX,
@@ -158,19 +166,17 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t
     scissor.extent = ext;
     vkCmdSetScissor(cmd, 0, 1, &scissor);
 
-    // Set 0 (câmera) é específico do frame. Os sets 1 a 3 são compartilhados.
-    // Os dois pipelines usam os mesmos layouts, então a mesma ligação serve para ambos.
-    const VkDescriptorSet camera = m_descriptors->cameraSet(frame);
-    const VkDescriptorSet shared[SET_COUNT - 1] = {
-        m_descriptors->set(SET_MATERIAL),
-        m_descriptors->set(SET_LIGHTS),
-        m_descriptors->set(SET_GBUFFER),
+    // Os quatro sets na ordem dos números do shader. Câmera e luzes são de cada frame;
+    // material e G-Buffer são compartilhados. Os dois pipelines têm os mesmos layouts.
+    const VkDescriptorSet sets[SET_COUNT] = {
+        m_descriptors->cameraSet(frame),
+        m_descriptors->materialSet(),
+        m_descriptors->lightSet(frame),
+        m_descriptors->gbufferSet(),
     };
     auto bindSets = [&](VkPipelineLayout layout) {
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            0, 1, &camera, 0, nullptr);
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, layout,
-            1, SET_COUNT - 1, shared, 0, nullptr);
+            0, SET_COUNT, sets, 0, nullptr);
         };
 
     // ---- Subpass 0: geometria ----
