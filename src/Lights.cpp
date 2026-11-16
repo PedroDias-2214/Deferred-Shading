@@ -5,11 +5,12 @@
 namespace {
 
     constexpr float PI = 3.14159265f;
-    constexpr float PLANE_HALF = 2.0f;  // o plano vai de -2 a 2 nos eixos X e Y
+    // Ângulo áureo: espalha os pontos de uma esfera de forma quase uniforme.
+    constexpr float GOLDEN_ANGLE = PI * (3.0f - 2.2360680f);
 
     float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
 
-    // Converte um matiz (0 a 1) em RGB com saturação máxima, para as luzes terem cores distintas.
+    // Converte um matiz (0 a 1) em RGB saturado, para que cada luz tenha uma cor distinta.
     void hueToRgb(float h, float rgb[3]) {
         rgb[0] = clamp01(std::fabs(h * 6.0f - 3.0f) - 1.0f);
         rgb[1] = clamp01(2.0f - std::fabs(h * 6.0f - 2.0f));
@@ -29,38 +30,44 @@ void SceneLights::build(float time, LightBlock& out) {
     out.lights.clear();
     out.lights.reserve(POINT_COUNT + SPOT_COUNT);
 
-    // ---- Pontuais: grade sobre o plano, cada uma oscilando em volta da sua posição ----
+    // ---- Pontuais: distribuídas quase uniformemente na casca esférica, girando devagar ----
     for (uint32_t i = 0; i < POINT_COUNT; ++i) {
-        const float gx = (static_cast<float>(i % GRID) + 0.5f) / GRID * 2.0f - 1.0f;  // -1..1
-        const float gy = (static_cast<float>(i / GRID) + 0.5f) / GRID * 2.0f - 1.0f;
-        const float phase = static_cast<float>(i) * 0.37f;
+        const float y = 1.0f - 2.0f * (static_cast<float>(i) + 0.5f) / POINT_COUNT;
+        const float r = std::sqrt(1.0f - y * y);
+        const float theta = GOLDEN_ANGLE * static_cast<float>(i) + 0.2f * time;
 
         GpuLight l{};
         setVec4(l.positionRadius,
-            gx * PLANE_HALF + 0.25f * std::cos(time + phase),
-            gy * PLANE_HALF + 0.25f * std::sin(0.7f * time + phase),
-            0.4f,    // altura acima do plano
-            1.2f);   // raio de alcance
+            SHELL_RADIUS * r * std::cos(theta),
+            SHELL_RADIUS * y,
+            SHELL_RADIUS * r * std::sin(theta),
+            3.0f);  // raio de alcance: cobre a superfície do modelo a partir da casca
 
         float rgb[3];
         hueToRgb(static_cast<float>(i) / POINT_COUNT, rgb);
-        setVec4(l.colorIntensity, rgb[0], rgb[1], rgb[2], 0.35f);
+        setVec4(l.colorIntensity, rgb[0], rgb[1], rgb[2], 0.6f);
         setVec4(l.directionType, 0.0f, 0.0f, 0.0f, 1.0f);  // tipo 1 = pontual
-        setVec4(l.attenSpot, 1.0f, 0.0f, 4.0f, 0.0f);      // kc, kl, kq
+        setVec4(l.attenSpot, 1.0f, 0.5f, 1.0f, 0.0f);      // kc, kl, kq
         out.lights.push_back(l);
     }
 
-    // ---- Spot: anel acima do plano, apontando para baixo (-Z) ----
+    // ---- Spots: orbitam por fora do modelo, com altura oscilante, apontando para o centro ----
     const float coneInner = std::cos(20.0f * PI / 180.0f);
     const float coneOuter = std::cos(30.0f * PI / 180.0f);
     for (uint32_t i = 0; i < SPOT_COUNT; ++i) {
-        const float a = time * 0.5f + static_cast<float>(i) * (2.0f * PI / SPOT_COUNT);
+        const float a = 0.5f * time + static_cast<float>(i) * (2.0f * PI / SPOT_COUNT);
+        const float px = ORBIT_RADIUS * std::cos(a);
+        const float py = 1.0f * std::sin(0.7f * time + static_cast<float>(i) * 1.3f);
+        const float pz = ORBIT_RADIUS * std::sin(a);
+
+        // Direção da luz para a origem (o centro do modelo).
+        const float len = std::sqrt(px * px + py * py + pz * pz);
 
         GpuLight l{};
-        setVec4(l.positionRadius, 1.8f * std::cos(a), 1.8f * std::sin(a), 1.2f, 3.0f);
+        setVec4(l.positionRadius, px, py, pz, 4.0f);
         setVec4(l.colorIntensity, 1.0f, 0.95f, 0.8f, 2.0f);
-        setVec4(l.directionType, 0.0f, 0.0f, -1.0f, 2.0f);  // tipo 2 = spot
-        setVec4(l.attenSpot, 1.0f, 0.0f, 1.0f, 0.0f);
+        setVec4(l.directionType, -px / len, -py / len, -pz / len, 2.0f);  // tipo 2 = spot
+        setVec4(l.attenSpot, 1.0f, 0.0f, 0.2f, 0.0f);
         setVec4(l.spotCone, coneInner, coneOuter, 0.0f, 0.0f);
         out.lights.push_back(l);
     }

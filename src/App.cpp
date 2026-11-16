@@ -8,14 +8,44 @@
 #include <stdexcept>
 #include <vector>
 
+#include "ObjLoader.hpp"
+
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
+#include <string>
+
+#ifndef MODEL_DIR
+#define MODEL_DIR "assets/models"
+#endif
+
 // Plano quadrado em z = 0, com a normal apontando para +Z (a câmera fica em z positivo).
 // Os dois triângulos seguem a ordem anti-horária vista de +Z, que é a face da frente.
-static std::vector<Vertex> makePlane(float h) {
-    const Vertex a{ {-h, -h, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f} };
-    const Vertex b{ { h, -h, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}, {1.0f, 0.0f, 0.0f, 1.0f} };
-    const Vertex c{ { h,  h, 0.0f}, {0.0f, 0.0f, 1.0f}, {1.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f} };
-    const Vertex d{ {-h,  h, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 0.0f}, {1.0f, 0.0f, 0.0f, 1.0f} };
-    return { a, b, c, a, c, d };
+
+// Matriz que centraliza o modelo na origem e o reduz a raio 1, para caber na câmera.
+// Com a câmera em z = 3 e FOV de 60 graus, um modelo de raio 1 ocupa boa parte da tela.
+
+static void makeNormalizingMatrix(const MeshData& m, float out[16]) {
+    float c[3];
+    for (int a = 0; a < 3; ++a) {
+        c[a] = 0.5f * (m.boundsMin[a] + m.boundsMax[a]);
+    }
+
+    float radius = 0.0f;
+    for (const Vertex& v : m.vertices) {
+        const float dx = v.position[0] - c[0];
+        const float dy = v.position[1] - c[1];
+        const float dz = v.position[2] - c[2];
+        radius = std::max(radius, std::sqrt(dx * dx + dy * dy + dz * dz));
+    }
+
+    const float s = radius > 0.0f ? 1.0f / radius : 1.0f;
+    for (int i = 0; i < 16; ++i) out[i] = 0.0f;
+    out[0] = out[5] = out[10] = s;
+    out[15] = 1.0f;
+    out[12] = -c[0] * s;
+    out[13] = -c[1] * s;
+    out[14] = -c[2] * s;
 }
 
 void App::run() {
@@ -73,7 +103,11 @@ void App::initVulkan() {
     m_descriptors.writeMaterial(m_material.albedoView(), m_material.normalView(),
         m_material.specularView(), m_material.sampler(), m_material.ubo());
 
-    m_mesh.create(m_device.logical(), m_device.physical(), makePlane(2.0f));
+    const std::string modelPath = std::string(MODEL_DIR) + "/teste.obj";
+    const MeshData model = ObjLoader::load(modelPath);
+    std::printf("Modelo carregado: %zu vértices, %zu índices\n",
+        model.vertices.size(), model.indices.size());
+    m_mesh.create(m_device.logical(), m_device.physical(), model);
 
     m_geometryPipeline.create(m_device.logical(), m_renderPass.handle(), 0, m_shaders, m_descriptors);
     m_pipeline.create(m_device.logical(), m_renderPass.handle(), 1,
@@ -83,6 +117,10 @@ void App::initVulkan() {
 
     m_renderer.create(m_device, m_swapchain, m_renderPass,
         m_geometryPipeline, m_pipeline, m_mesh, m_descriptors, m_cameraUbos, m_lightUbos);
+
+    float modelMatrix[16];
+    makeNormalizingMatrix(model, modelMatrix);
+    m_renderer.setModelMatrix(modelMatrix);
 }
 
 void App::mainLoop() {

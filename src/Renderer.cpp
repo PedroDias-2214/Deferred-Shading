@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <stdexcept>
 #include <vector>
+#include <cstring>
 
 void Renderer::create(const Device& device, const Swapchain& swapchain, const RenderPass& renderPass,
     const GeometryPipeline& geometry, const LightingPipeline& lighting,
@@ -210,12 +211,12 @@ void Renderer::recordCommands(VkCommandBuffer cmd, uint32_t imageIndex, uint32_t
     m_mesh->bind(cmd);
 
     ObjectPushConstants obj{};
-    setIdentity(obj.model);
-    setIdentity(obj.normalMatrix);
+    std::memcpy(obj.model, m_model, sizeof(m_model));
+    std::memcpy(obj.normalMatrix, m_model, sizeof(m_model));  // escala uniforme: o shader normaliza
     vkCmdPushConstants(cmd, m_geometry->layout(), VK_SHADER_STAGE_VERTEX_BIT,
         0, sizeof(obj), &obj);
 
-    vkCmdDraw(cmd, m_mesh->vertexCount(), 1, 0, 0);
+    vkCmdDrawIndexed(cmd, m_mesh->indexCount(), 1, 0, 0, 0);
 
     // ---- Subpass 1: iluminação ----
     vkCmdNextSubpass(cmd, VK_SUBPASS_CONTENTS_INLINE);
@@ -256,4 +257,8 @@ void Renderer::destroy() {
     m_renderFinished.clear();
     m_commandBuffers.clear();
     m_device = VK_NULL_HANDLE;
+}
+
+void Renderer::setModelMatrix(const float m[16]) {
+    std::memcpy(m_model, m, sizeof(m_model));
 }

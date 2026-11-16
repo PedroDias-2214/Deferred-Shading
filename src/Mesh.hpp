@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+#include <cstdint>
 #include <vector>
 #include "Buffer.hpp"
 
@@ -14,17 +15,26 @@ struct Vertex {
 };
 static_assert(sizeof(Vertex) == 48, "Vertex deve ter 48 bytes");
 
-// Dona de um vertex buffer. Por enquanto fica em memória visível pela CPU, por simplicidade.
+// Dados de uma malha antes de irem para a GPU.
+struct MeshData {
+    std::vector<Vertex> vertices;
+    std::vector<uint32_t> indices;
+    float boundsMin[3] = { 0.0f, 0.0f, 0.0f };
+    float boundsMax[3] = { 0.0f, 0.0f, 0.0f };
+};
+
+// Dona dos buffers de vértice e de índice da malha.
 class Mesh {
 public:
-    void create(VkDevice device, VkPhysicalDevice physical, const std::vector<Vertex>& vertices);
+    void create(VkDevice device, VkPhysicalDevice physical, const MeshData& data);
     void destroy();
 
-    // Liga o vertex buffer ao command buffer.
+    // Liga os buffers de vértice e de índice ao command buffer.
     void bind(VkCommandBuffer cmd) const;
-    uint32_t vertexCount() const { return m_count; }
+    uint32_t indexCount() const { return m_indexCount; }
 
 private:
     Buffer m_vertexBuffer;
-    uint32_t m_count = 0;
+    Buffer m_indexBuffer;
+    uint32_t m_indexCount = 0;
 };

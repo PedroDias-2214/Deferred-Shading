@@ -18,6 +18,8 @@ inline constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
 
 class Renderer {
 public:
+    // Matriz de modelo (16 floats, em ordem de colunas) usada para desenhar a malha.
+    void setModelMatrix(const float m[16]);
     // cameraUbos e lightUbos: um buffer por frame em voo. O Renderer os preenche, mas não é dono.
     void create(const Device& device, const Swapchain& swapchain, const RenderPass& renderPass,
         const GeometryPipeline& geometry, const LightingPipeline& lighting,
@@ -56,6 +58,7 @@ private:
     std::vector<VkSemaphore> m_renderFinished;
     std::vector<VkFence> m_inFlight;
     uint32_t m_debugView = 0;
+    float m_model[16] = { 1, 0, 0, 0,  0, 1, 0, 0,  0, 0, 1, 0,  0, 0, 0, 1 };
 
     uint32_t m_currentFrame = 0;
 };
