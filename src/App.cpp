@@ -8,7 +8,7 @@
 #include <stdexcept>
 #include <vector>
 
-#include "ObjLoader.hpp"
+#include "GltfLoader.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -78,8 +78,6 @@ void App::initVulkan() {
         "lighting.frag.spv",
         });
 
-    // Um buffer de câmera e um de luzes por frame em voo: a CPU escreve só no slot do
-    // frame atual, sem mexer nos dados que a GPU ainda lê dos outros frames.
     m_cameraUbos.resize(MAX_FRAMES_IN_FLIGHT);
     m_lightUbos.resize(MAX_FRAMES_IN_FLIGHT);
     for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -99,15 +97,18 @@ void App::initVulkan() {
     }
     m_descriptors.writeGBuffer(m_gbuffer);
 
-    m_material.create(m_device);
+    // Modelo glTF (GLB): geometria com as transformações aplicadas, textura de cor e de normal.
+    const std::string modelPath = std::string(MODEL_DIR) + "/Daniel.glb";
+    const ModelData model = GltfLoader::load(modelPath);
+    std::printf("Modelo carregado: %zu vértices, %zu índices, albedo %ux%u, normal %ux%u\n",
+        model.mesh.vertices.size(), model.mesh.indices.size(),
+        model.albedo.width, model.albedo.height, model.normal.width, model.normal.height);
+
+    m_material.create(m_device, model);
     m_descriptors.writeMaterial(m_material.albedoView(), m_material.normalView(),
         m_material.specularView(), m_material.sampler(), m_material.ubo());
 
-    const std::string modelPath = std::string(MODEL_DIR) + "/teste.obj";
-    const MeshData model = ObjLoader::load(modelPath);
-    std::printf("Modelo carregado: %zu vértices, %zu índices\n",
-        model.vertices.size(), model.indices.size());
-    m_mesh.create(m_device.logical(), m_device.physical(), model);
+    m_mesh.create(m_device.logical(), m_device.physical(), model.mesh);
 
     m_geometryPipeline.create(m_device.logical(), m_renderPass.handle(), 0, m_shaders, m_descriptors);
     m_pipeline.create(m_device.logical(), m_renderPass.handle(), 1,
@@ -119,7 +120,7 @@ void App::initVulkan() {
         m_geometryPipeline, m_pipeline, m_mesh, m_descriptors, m_cameraUbos, m_lightUbos);
 
     float modelMatrix[16];
-    makeNormalizingMatrix(model, modelMatrix);
+    makeNormalizingMatrix(model.mesh, modelMatrix);
     m_renderer.setModelMatrix(modelMatrix);
 }
 

@@ -1,14 +1,17 @@
 #pragma once
 
 #include <vulkan/vulkan.h>
+
 #include "Device.hpp"
 #include "Buffer.hpp"
+#include "GltfLoader.hpp"
 
-// Material padrão: texturas 1x1 e parâmetros fixos. Serve até existirem texturas reais.
-// O geometry.frag amostra sempre as três texturas, então elas precisam existir.
-class DefaultMaterial {
+// Material do modelo: textura de cor, textura de normal e parâmetros, nos formatos
+// que o geometry.frag espera (set 1). Quando o modelo não traz uma textura, usa um
+// pixel neutro no lugar.
+class Material {
 public:
-    void create(const Device& device);
+    void create(const Device& device, const ModelData& model);
     void destroy();
 
     VkImageView albedoView() const { return m_albedo.view; }
@@ -25,9 +28,7 @@ private:
     };
 
     void createTexture(const Device& device, Texture& tex, VkFormat format,
-        const void* pixels, VkDeviceSize size);
-    uint32_t findMemoryType(VkPhysicalDevice physical, uint32_t typeBits,
-        VkMemoryPropertyFlags properties) const;
+        uint32_t width, uint32_t height, const uint8_t* pixels, VkDeviceSize size);
 
     VkDevice m_device = VK_NULL_HANDLE;
     Texture m_albedo;

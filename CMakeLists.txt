@@ -57,11 +57,12 @@ set(APP_SOURCES
     src/Descriptors.cpp
     src/LightingPipeline.cpp
     src/Renderer.cpp
-    src/DefaultMaterial.cpp
     src/Mesh.cpp
     src/GeometryPipeline.cpp
     src/Camera.cpp
     src/Lights.cpp
+    src/GltfLoader.cpp
+    src/Material.cpp
 )
 
 add_executable(DeferredVulkan ${APP_SOURCES})
@@ -70,6 +71,7 @@ add_dependencies(DeferredVulkan Shaders)
 target_include_directories(DeferredVulkan SYSTEM PRIVATE
     ${VULKAN_SDK_PATH}/Include
     ${GLFW_DIR}/include
+    ${THIRDPARTY_DIR}/headers
 )
 
 target_link_directories(DeferredVulkan PRIVATE
@@ -78,6 +80,8 @@ target_link_directories(DeferredVulkan PRIVATE
 )
 
 target_link_libraries(DeferredVulkan PRIVATE vulkan-1 glfw3)
+
+target_compile_definitions(DeferredVulkan PRIVATE MODEL_DIR="${CMAKE_CURRENT_SOURCE_DIR}/assets/models")
 
 # Copia os .spv para junto do executável, onde o programa vai carregá-los
 add_custom_command(TARGET DeferredVulkan POST_BUILD

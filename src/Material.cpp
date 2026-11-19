@@ -1,31 +1,57 @@
-#include "DefaultMaterial.hpp"
+#include "Material.hpp"
 
 #include <cstdio>
 #include <stdexcept>
 
-// Parâmetros do material no formato do MaterialUBO do geometry.frag (std140, 32 bytes).
-struct MaterialParams {
-    float baseColorFactor[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
-    float specularFactor = 0.5f;
-    float shininess = 32.0f;
-    float alphaCutoff = 0.5f;
-    uint32_t flags = 0;  // sem normal map, sem specular map, sem alpha test
-};
-static_assert(sizeof(MaterialParams) == 32, "MaterialParams deve ter 32 bytes");
+namespace {
 
-void DefaultMaterial::create(const Device& device) {
+    // Parâmetros no formato do MaterialUBO do geometry.frag (std140, 32 bytes).
+    struct MaterialParams {
+        float baseColorFactor[4];
+        float specularFactor;
+        float shininess;
+        float alphaCutoff;
+        uint32_t flags;
+    };
+    static_assert(sizeof(MaterialParams) == 32, "MaterialParams deve ter 32 bytes");
+
+    constexpr uint32_t FLAG_HAS_NORMAL_MAP = 1u;
+
+    ImageRGBA solidPixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        ImageRGBA img;
+        img.width = 1;
+        img.height = 1;
+        img.pixels = { r, g, b, a };
+        return img;
+    }
+
+    uint32_t findMemoryType(VkPhysicalDevice physical, uint32_t typeBits, VkMemoryPropertyFlags properties) {
+        VkPhysicalDeviceMemoryProperties mem{};
+        vkGetPhysicalDeviceMemoryProperties(physical, &mem);
+
+        for (uint32_t i = 0; i < mem.memoryTypeCount; ++i) {
+            bool allowed = (typeBits & (1u << i)) != 0;
+            bool hasProps = (mem.memoryTypes[i].propertyFlags & properties) == properties;
+            if (allowed && hasProps) return i;
+        }
+        throw std::runtime_error("Nenhum tipo de memória adequado para o material");
+    }
+
+} // namespace
+
+void Material::create(const Device& device, const ModelData& model) {
     m_device = device.logical();
 
-    // Laranja em sRGB: a GPU converte para linear na leitura.
-    const uint8_t albedoPixel[4] = { 230, 120, 40, 255 };
-    // Normal apontando para fora da superfície, codificada em [0,1].
-    const uint8_t normalPixel[4] = { 128, 128, 255, 255 };
-    // Especular no máximo (1 canal).
-    const uint8_t specularPixel[1] = { 255 };
+    const ImageRGBA albedo = model.albedo.valid() ? model.albedo : solidPixel(255, 255, 255, 255);
+    const bool hasNormal = model.normal.valid();
+    const ImageRGBA normal = hasNormal ? model.normal : solidPixel(128, 128, 255, 255);
+    const uint8_t specular = 255;
 
-    createTexture(device, m_albedo, VK_FORMAT_R8G8B8A8_SRGB, albedoPixel, 4);
-    createTexture(device, m_normal, VK_FORMAT_R8G8B8A8_UNORM, normalPixel, 4);
-    createTexture(device, m_specular, VK_FORMAT_R8_UNORM, specularPixel, 1);
+    createTexture(device, m_albedo, VK_FORMAT_R8G8B8A8_SRGB,
+        albedo.width, albedo.height, albedo.pixels.data(), albedo.pixels.size());
+    createTexture(device, m_normal, VK_FORMAT_R8G8B8A8_UNORM,
+        normal.width, normal.height, normal.pixels.data(), normal.pixels.size());
+    createTexture(device, m_specular, VK_FORMAT_R8_UNORM, 1, 1, &specular, 1);
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -42,21 +68,28 @@ void DefaultMaterial::create(const Device& device) {
     }
 
     MaterialParams params{};
+    for (int i = 0; i < 4; ++i) params.baseColorFactor[i] = model.baseColorFactor[i];
+    params.specularFactor = 0.5f;
+    params.shininess = 32.0f;
+    params.alphaCutoff = 0.5f;
+    params.flags = hasNormal ? FLAG_HAS_NORMAL_MAP : 0u;
+
     m_ubo.create(m_device, device.physical(), sizeof(params), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     m_ubo.write(&params, sizeof(params));
 
-    std::printf("Material padrão criado (3 texturas 1x1)\n");
+    std::printf("Material criado: albedo %ux%u, normal %s\n",
+        albedo.width, albedo.height, hasNormal ? "do modelo" : "neutra");
 }
 
-void DefaultMaterial::createTexture(const Device& device, Texture& tex, VkFormat format,
-    const void* pixels, VkDeviceSize size) {
+void Material::createTexture(const Device& device, Texture& tex, VkFormat format,
+    uint32_t width, uint32_t height, const uint8_t* pixels, VkDeviceSize size)
+{
     VkDevice dev = device.logical();
 
-    // ---- Imagem 1x1, em memória local da GPU ----
     VkImageCreateInfo imageInfo{};
     imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
     imageInfo.imageType = VK_IMAGE_TYPE_2D;
-    imageInfo.extent = { 1, 1, 1 };
+    imageInfo.extent = { width, height, 1 };
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
     imageInfo.format = format;
@@ -95,7 +128,7 @@ void DefaultMaterial::createTexture(const Device& device, Texture& tex, VkFormat
         throw std::runtime_error("Falha ao criar image view do material");
     }
 
-    // ---- Upload: copia os pixels por um buffer de staging ----
+    // Upload: os pixels passam por um buffer de staging e são copiados para a imagem.
     Buffer staging;
     staging.create(dev, device.physical(), size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT);
     staging.write(pixels, size);
@@ -122,7 +155,6 @@ void DefaultMaterial::createTexture(const Device& device, Texture& tex, VkFormat
     begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(cmd, &begin);
 
-    // Transição 1: UNDEFINED -> TRANSFER_DST, para poder receber a cópia.
     VkImageMemoryBarrier barrier{};
     barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -138,11 +170,10 @@ void DefaultMaterial::createTexture(const Device& device, Texture& tex, VkFormat
 
     VkBufferImageCopy region{};
     region.imageSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 };
-    region.imageExtent = { 1, 1, 1 };
+    region.imageExtent = { width, height, 1 };
     vkCmdCopyBufferToImage(cmd, staging.handle(), tex.image,
         VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    // Transição 2: TRANSFER_DST -> SHADER_READ_ONLY, para o fragment shader amostrar.
     barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
@@ -157,26 +188,13 @@ void DefaultMaterial::createTexture(const Device& device, Texture& tex, VkFormat
     submit.commandBufferCount = 1;
     submit.pCommandBuffers = &cmd;
     vkQueueSubmit(device.graphicsQueue(), 1, &submit, VK_NULL_HANDLE);
-    vkQueueWaitIdle(device.graphicsQueue());  // simples: espera a cópia terminar
+    vkQueueWaitIdle(device.graphicsQueue());
 
     vkDestroyCommandPool(dev, pool, nullptr);
     staging.destroy();
 }
 
-uint32_t DefaultMaterial::findMemoryType(VkPhysicalDevice physical, uint32_t typeBits,
-    VkMemoryPropertyFlags properties) const {
-    VkPhysicalDeviceMemoryProperties mem{};
-    vkGetPhysicalDeviceMemoryProperties(physical, &mem);
-
-    for (uint32_t i = 0; i < mem.memoryTypeCount; ++i) {
-        bool allowed = (typeBits & (1u << i)) != 0;
-        bool hasProps = (mem.memoryTypes[i].propertyFlags & properties) == properties;
-        if (allowed && hasProps) return i;
-    }
-    throw std::runtime_error("Nenhum tipo de memória adequado para o material");
-}
-
-void DefaultMaterial::destroy() {
+void Material::destroy() {
     if (m_device == VK_NULL_HANDLE) return;
 
     m_ubo.destroy();

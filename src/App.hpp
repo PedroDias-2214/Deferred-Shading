@@ -10,7 +10,7 @@
 #include "Descriptors.hpp"
 #include "SceneData.hpp"
 #include "Lights.hpp"
-#include "DefaultMaterial.hpp"
+#include "Material.hpp"
 #include "Mesh.hpp"
 #include "GeometryPipeline.hpp"
 #include "LightingPipeline.hpp"
@@ -43,7 +43,7 @@ private:
     GBuffer m_gbuffer;
     RenderPass m_renderPass;
     Descriptors m_descriptors;
-    DefaultMaterial m_material;
+    Material m_material;
     Mesh m_mesh;
     GeometryPipeline m_geometryPipeline;
     LightingPipeline m_pipeline;
