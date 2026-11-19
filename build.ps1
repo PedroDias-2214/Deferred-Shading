@@ -1,4 +1,5 @@
 $ErrorActionPreference = "Stop"
+& "$PSScriptRoot\fetch_deps.ps1"
 $build = "out\build\x64-Debug"
 $generator = "Visual Studio 18 2026"
 
