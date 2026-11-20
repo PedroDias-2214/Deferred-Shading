@@ -9,8 +9,8 @@ if(NOT DEFINED ENV{VULKAN_SDK})
     message(FATAL_ERROR "Variável VULKAN_SDK não definida. Instale o Vulkan SDK.")
 endif()
 set(VULKAN_SDK_PATH $ENV{VULKAN_SDK})
-set(THIRDPARTY_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../ThirdParty)
-set(GLFW_DIR ${THIRDPARTY_DIR}/GLFW)
+set(EXTERNAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/external)
+set(GLFW_DIR ${EXTERNAL_DIR}/GLFW)
 
 # Compilador de shaders GLSL -> SPIR-V (vem no Vulkan SDK)
 find_program(GLSLC glslc HINTS ${VULKAN_SDK_PATH}/Bin ${VULKAN_SDK_PATH}/bin REQUIRED)
@@ -71,7 +71,7 @@ add_dependencies(DeferredVulkan Shaders)
 target_include_directories(DeferredVulkan SYSTEM PRIVATE
     ${VULKAN_SDK_PATH}/Include
     ${GLFW_DIR}/include
-    ${THIRDPARTY_DIR}/headers
+    ${EXTERNAL_DIR}/headers
 )
 
 target_link_directories(DeferredVulkan PRIVATE
