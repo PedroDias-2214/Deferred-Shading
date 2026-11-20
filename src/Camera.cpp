@@ -82,8 +82,10 @@ void Camera::update(GLFWwindow* window, float dt) {
     if (pressed(GLFW_KEY_S)) move = add(move, scale(f, -1.0f));
     if (pressed(GLFW_KEY_D)) move = add(move, r);
     if (pressed(GLFW_KEY_A)) move = add(move, scale(r, -1.0f));
-    if (pressed(GLFW_KEY_E)) move = add(move, up);
-    if (pressed(GLFW_KEY_Q)) move = add(move, scale(up, -1.0f));
+    if (pressed(GLFW_KEY_SPACE)) move = add(move, up);
+    if (pressed(GLFW_KEY_LEFT_CONTROL) || pressed(GLFW_KEY_LEFT_SHIFT)) {
+        move = add(move, scale(up, -1.0f));
+    }
 
     if (dot(move, move) > 0.0f) {
         const float speed = 3.0f;  // unidades por segundo

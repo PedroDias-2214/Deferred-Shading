@@ -17,6 +17,11 @@
 
 #ifndef MODEL_DIR
 #define MODEL_DIR "assets/models"
+
+#include <algorithm>
+#include <cstdio>
+#include <string>
+
 #endif
 
 // Plano quadrado em z = 0, com a normal apontando para +Z (a câmera fica em z positivo).
@@ -47,6 +52,53 @@ static void makeNormalizingMatrix(const MeshData& m, float out[16]) {
     out[13] = -c[1] * s;
     out[14] = -c[2] * s;
 }
+
+namespace {
+    // Retorna true só no instante em que a tecla passa de solta para pressionada.
+    bool pressedOnce(GLFWwindow* window, int key, bool& wasDown) {
+        const bool down = glfwGetKey(window, key) == GLFW_PRESS;
+        const bool edge = down && !wasDown;
+        wasDown = down;
+        return edge;
+    }
+
+    // Nome da paleta, para a barra de título.
+    const char* paletteName(PointPalette p) {
+        switch (p) {
+        case PointPalette::White: return "Branca";
+        case PointPalette::Warm:  return "Quente";
+        case PointPalette::Cold:  return "Fria";
+        default:                  return "Arcoiris";
+        }
+    }
+
+    // Lista completa de comandos.
+    void printHelp() {
+        std::printf(
+            "\n===== COMANDOS =====\n"
+            "Camera:\n"
+            "  W A S D      andar para frente, tras, esquerda, direita\n"
+            "  Espaco       subir\n"
+            "  Ctrl / Shift esquerdo  descer\n"
+            "  Mouse        olhar em volta (com o mouse preso)\n"
+            "  Tab          solta ou prende o mouse\n"
+            "  Clique esq.  prende o mouse de novo\n"
+            "Luzes:\n"
+            "  L            liga / desliga as pontuais\n"
+            "  K            liga / desliga os spots\n"
+            "  C            troca a paleta das pontuais (Arcoiris, Branca, Quente, Fria)\n"
+            "  =  e  -      aumenta / diminui a intensidade\n"
+            "Visualizacao (G-Buffer):\n"
+            "  0 cena final  |  1 posicao  |  2 normal\n"
+            "  3 albedo      |  4 especular|  5 profundidade\n"
+            "Outros:\n"
+            "  H            mostra esta lista de novo\n"
+            "  X da janela  fecha a aplicacao\n"
+            "====================\n\n");
+        std::fflush(stdout);
+    }
+
+} // namespace
 
 void App::run() {
     initWindow();
@@ -122,41 +174,79 @@ void App::initVulkan() {
     float modelMatrix[16];
     makeNormalizingMatrix(model.mesh, modelMatrix);
     m_renderer.setModelMatrix(modelMatrix);
+
+    printHelp();
+}
+
+// Atualiza o título da janela com o estado atual. Só chama o sistema se o texto mudou.
+void App::updateTitle() {
+    char buf[256];
+    std::snprintf(buf, sizeof(buf),
+        "Deferred Shading | L pontuais:%s  K spots:%s  C paleta:%s  =/- intensidade:%.2f  Tab mouse:%s  H ajuda",
+        m_lightSettings.points ? "on" : "off",
+        m_lightSettings.spots ? "on" : "off",
+        paletteName(m_lightSettings.palette),
+        m_lightSettings.intensity,
+        m_camera.isCaptured() ? "preso" : "solto");
+
+    if (m_title != buf) {
+        m_title = buf;
+        glfwSetWindowTitle(m_window, buf);
+    }
+}
+
+// Lê todo o teclado e o mouse de um quadro. Chamada uma vez por quadro, em mainLoop.
+void App::handleInput() {
+    // Tab solta ou prende o mouse.
+    if (pressedOnce(m_window, GLFW_KEY_TAB, m_downTab)) {
+        m_camera.setCaptured(m_window, !m_camera.isCaptured());
+    }
+
+    // Clique esquerdo prende o mouse, se ele estiver solto.
+    if (!m_camera.isCaptured() &&
+        glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        m_camera.setCaptured(m_window, true);
+    }
+
+    // Luzes.
+    if (pressedOnce(m_window, GLFW_KEY_L, m_downL)) {
+        m_lightSettings.points = !m_lightSettings.points;
+    }
+    if (pressedOnce(m_window, GLFW_KEY_K, m_downK)) {
+        m_lightSettings.spots = !m_lightSettings.spots;
+    }
+    if (pressedOnce(m_window, GLFW_KEY_C, m_downC)) {
+        const uint32_t count = static_cast<uint32_t>(PointPalette::Count);
+        const uint32_t next = (static_cast<uint32_t>(m_lightSettings.palette) + 1) % count;
+        m_lightSettings.palette = static_cast<PointPalette>(next);
+    }
+    if (pressedOnce(m_window, GLFW_KEY_EQUAL, m_downPlus)) {
+        m_lightSettings.intensity = std::min(m_lightSettings.intensity * 1.25f, 8.0f);
+    }
+    if (pressedOnce(m_window, GLFW_KEY_MINUS, m_downMinus)) {
+        m_lightSettings.intensity = std::max(m_lightSettings.intensity / 1.25f, 0.1f);
+    }
+
+    // Teclas 0 a 5: modo de visualização do G-Buffer.
+    for (int key = GLFW_KEY_0; key <= GLFW_KEY_5; ++key) {
+        if (glfwGetKey(m_window, key) == GLFW_PRESS) {
+            m_renderer.setDebugView(static_cast<uint32_t>(key - GLFW_KEY_0));
+        }
+    }
+
+    // H mostra a lista de comandos.
+    if (pressedOnce(m_window, GLFW_KEY_H, m_downH)) {
+        printHelp();
+    }
 }
 
 void App::mainLoop() {
     double lastTime = glfwGetTime();
-    bool tabWasDown = false;
-
     while (!glfwWindowShouldClose(m_window)) {
         glfwPollEvents();
+        handleInput();
 
-        // Tab alterna entre controlar a câmera e usar o mouse normalmente.
-        const bool tabDown = glfwGetKey(m_window, GLFW_KEY_TAB) == GLFW_PRESS;
-        if (tabDown && !tabWasDown) {
-            m_camera.setCaptured(m_window, !m_camera.isCaptured());
-        }
-        tabWasDown = tabDown;
-
-        // Clique esquerdo na janela prende o mouse de novo.
-        if (!m_camera.isCaptured() &&
-            glfwGetMouseButton(m_window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
-            m_camera.setCaptured(m_window, true);
-        }
-
-        // Esc solta o mouse. Não fecha a aplicação: para fechar, use o X da janela.
-        if (glfwGetKey(m_window, GLFW_KEY_ESCAPE) == GLFW_PRESS && m_camera.isCaptured()) {
-            m_camera.setCaptured(m_window, false);
-        }
-
-        // Teclas 0 a 5 trocam o modo de depuração.
-        for (int key = GLFW_KEY_0; key <= GLFW_KEY_5; ++key) {
-            if (glfwGetKey(m_window, key) == GLFW_PRESS) {
-                m_renderer.setDebugView(static_cast<uint32_t>(key - GLFW_KEY_0));
-            }
-        }
-
-        // Janela minimizada tem tamanho zero, e isso não pode ter swapchain. Espera voltar.
+        // Janela minimizada tem tamanho zero: espera voltar.
         int fbWidth = 0, fbHeight = 0;
         glfwGetFramebufferSize(m_window, &fbWidth, &fbHeight);
         if (fbWidth == 0 || fbHeight == 0) {
@@ -165,7 +255,7 @@ void App::mainLoop() {
             continue;
         }
 
-        // O tamanho mudou desde a última swapchain: recria o que depende dele.
+        // Tamanho mudou desde a última swapchain: recria o que depende dele.
         const VkExtent2D current = m_swapchain.extent();
         if (static_cast<uint32_t>(fbWidth) != current.width ||
             static_cast<uint32_t>(fbHeight) != current.height) {
@@ -177,14 +267,14 @@ void App::mainLoop() {
         lastTime = now;
 
         m_camera.update(m_window, dt);
+        updateTitle();
 
         CameraData cam{};
         m_camera.fillCameraData(cam);
 
         LightBlock lights;
-        SceneLights::build(static_cast<float>(now), lights);
+        SceneLights::build(static_cast<float>(now), m_lightSettings, lights);
 
-        // Se a swapchain ficou inválida durante o quadro, recria antes do próximo.
         if (!m_renderer.drawFrame(cam, lights)) {
             recreateSwapchain();
         }

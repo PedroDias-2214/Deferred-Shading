@@ -18,6 +18,7 @@
 #include "Camera.hpp"
 
 #include <vector>
+#include <string>
 
 struct GLFWwindow;
 
@@ -49,4 +50,15 @@ private:
     LightingPipeline m_pipeline;
     Renderer m_renderer;
     Camera m_camera;
+    LightSettings m_lightSettings;
+    bool m_downL = false;
+    bool m_downK = false;
+    bool m_downC = false;
+    bool m_downPlus = false;
+    bool m_downMinus = false;
+    bool m_downH = false;
+    std::string m_title;
+    void updateTitle();
+    bool m_downTab = false;
+    void handleInput();
 };

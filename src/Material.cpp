@@ -69,8 +69,8 @@ void Material::create(const Device& device, const ModelData& model) {
 
     MaterialParams params{};
     for (int i = 0; i < 4; ++i) params.baseColorFactor[i] = model.baseColorFactor[i];
-    params.specularFactor = 0.5f;
-    params.shininess = 32.0f;
+    params.specularFactor = 0.15f;  // Valores pra material pele
+    params.shininess = 12.0f;       // Valores pra material pele
     params.alphaCutoff = 0.5f;
     params.flags = hasNormal ? FLAG_HAS_NORMAL_MAP : 0u;
 
