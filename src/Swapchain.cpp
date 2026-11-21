@@ -64,7 +64,6 @@ void Swapchain::create(const Device& device, GLFWwindow* window) {
     if (result != VK_SUCCESS) {
         throw std::runtime_error("Falha ao consultar a quantidade de imagens da swapchain");
     }
-    std::printf("[debug] imagens na swapchain: %u\n", count);
 
     // Segunda chamada: preenche um vetor local e só depois copia para o membro.
     std::vector<VkImage> images(count);

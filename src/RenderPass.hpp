@@ -24,7 +24,6 @@ public:
 
     VkRenderPass handle() const { return m_renderPass; }
     VkFramebuffer framebuffer(size_t index) const { return m_framebuffers[index]; }
-    size_t framebufferCount() const { return m_framebuffers.size(); }
     VkExtent2D extent() const { return m_extent; }
 
     // Valores de limpeza na ordem dos attachments. Usados no vkCmdBeginRenderPass.

@@ -4,10 +4,17 @@ $generator = "Visual Studio 18 2026"
 
 # Se a configuração existente foi feita com outro gerador, apaga a pasta de build.
 $cache = Join-Path $build "CMakeCache.txt"
+
 if (Test-Path $cache) {
-    $line = Select-String -Path $cache -Pattern "^CMAKE_GENERATOR:INTERNAL=" | Select-Object -First 1
-    if ($line -and $line.Line -notmatch [regex]::Escape($generator)) {
-        Write-Host "Gerador antigo encontrado, limpando a pasta de build..."
+    $homeLine = Select-String -Path $cache -Pattern "^CMAKE_HOME_DIRECTORY:INTERNAL=" | Select-Object -First 1
+    $genLine = Select-String -Path $cache -Pattern "^CMAKE_GENERATOR:INTERNAL=" | Select-Object -First 1
+    $projectPath = $PSScriptRoot -replace '\\', '/'
+
+    $pathChanged = $homeLine -and ($homeLine.Line -notmatch [regex]::Escape($projectPath))
+    $generatorChanged = $genLine -and ($genLine.Line -notmatch [regex]::Escape($generator))
+
+    if ($pathChanged -or $generatorChanged) {
+        Write-Host "Configuracao antiga (outro caminho ou gerador), limpando a pasta de build..."
         Remove-Item -Recurse -Force "out"
     }
 }

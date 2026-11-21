@@ -43,8 +43,3 @@ struct LightBlock {
     LightHeader header{};
     std::vector<GpuLight> lights;
 };
-
-inline void setIdentity(float m[16]) {
-    for (int i = 0; i < 16; ++i) m[i] = 0.0f;
-    m[0] = m[5] = m[10] = m[15] = 1.0f;
-}
