@@ -16,6 +16,7 @@ namespace {
     static_assert(sizeof(MaterialParams) == 32, "MaterialParams deve ter 32 bytes");
 
     constexpr uint32_t FLAG_HAS_NORMAL_MAP = 1u;
+    constexpr uint32_t FLAG_HAS_SPECULAR_MAP = 2u;
 
     ImageRGBA solidPixel(uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
         ImageRGBA img;
@@ -45,13 +46,25 @@ void Material::create(const Device& device, const ModelData& model) {
     const ImageRGBA albedo = model.albedo.valid() ? model.albedo : solidPixel(255, 255, 255, 255);
     const bool hasNormal = model.normal.valid();
     const ImageRGBA normal = hasNormal ? model.normal : solidPixel(128, 128, 255, 255);
-    const uint8_t specular = 255;
+
+    // Mapa de especular gerado a partir da cor base: regiões mais claras refletem mais.
+    // Escala 0.35 mantém o brilho discreto; aumente se quiser reflexos mais fortes.
+    ImageRGBA specularImg;
+    specularImg.width = albedo.width;
+    specularImg.height = albedo.height;
+    specularImg.pixels.resize(static_cast<size_t>(albedo.width) * albedo.height);
+    for (size_t i = 0; i < specularImg.pixels.size(); ++i) {
+        const uint8_t* p = &albedo.pixels[i * 4];
+        const float lum = 0.2126f * p[0] + 0.7152f * p[1] + 0.0722f * p[2];
+        specularImg.pixels[i] = static_cast<uint8_t>(lum * 0.35f);
+    }
 
     createTexture(device, m_albedo, VK_FORMAT_R8G8B8A8_SRGB,
         albedo.width, albedo.height, albedo.pixels.data(), albedo.pixels.size());
     createTexture(device, m_normal, VK_FORMAT_R8G8B8A8_UNORM,
         normal.width, normal.height, normal.pixels.data(), normal.pixels.size());
-    createTexture(device, m_specular, VK_FORMAT_R8_UNORM, 1, 1, &specular, 1);
+    createTexture(device, m_specular, VK_FORMAT_R8_UNORM,
+        specularImg.width, specularImg.height, specularImg.pixels.data(), specularImg.pixels.size());
 
     VkSamplerCreateInfo samplerInfo{};
     samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -69,10 +82,10 @@ void Material::create(const Device& device, const ModelData& model) {
 
     MaterialParams params{};
     for (int i = 0; i < 4; ++i) params.baseColorFactor[i] = model.baseColorFactor[i];
-    params.specularFactor = 0.15f;  // Valores pra material pele
+    params.specularFactor = 1.0f;   // o mapa passa a controlar a intensidade
     params.shininess = 12.0f;       // Valores pra material pele
     params.alphaCutoff = 0.5f;
-    params.flags = hasNormal ? FLAG_HAS_NORMAL_MAP : 0u;
+    params.flags = (hasNormal ? FLAG_HAS_NORMAL_MAP : 0u) | FLAG_HAS_SPECULAR_MAP;
 
     m_ubo.create(m_device, device.physical(), sizeof(params), VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT);
     m_ubo.write(&params, sizeof(params));
